@@ -129,7 +129,7 @@
             <div class="lg:col-span-7 flex flex-col gap-4">
                 <div class="flex justify-between items-end">
                     <h2 class="text-slate-400 font-semibold text-sm tracking-wide">Văn bản cần chuyển đổi</h2>
-                    <span class="text-xs text-slate-500 font-medium"><span id="char-count">174</span> / 5000 KÝ TỰ</span>
+                    <span class="text-xs text-slate-500 font-medium"><span id="char-count">174</span> / 10000 KÝ TỰ</span>
                 </div>
                 
                 <div class="relative flex-1 min-h-[250px] lg:min-h-[300px]">
@@ -343,6 +343,10 @@
         let currentAudioUrl = null;
         let lastGeneratedText = '';
 
+        // Giới hạn hiển thị của app. Với văn bản dài, app tự chia nhỏ để gọi API theo từng đoạn.
+        const MAX_TEXT_CHARS = 10000;
+        const TTS_CHUNK_CHARS = 4200;
+
         // Cập nhật background cho thanh trượt
         function updateSliderBg(slider, min, max) {
             const val = slider.value;
@@ -367,7 +371,10 @@
         });
 
         textInput.addEventListener('input', () => {
-            charCount.textContent = textInput.value.length;
+            const len = textInput.value.length;
+            charCount.textContent = len;
+            charCount.classList.toggle('text-rose-400', len > MAX_TEXT_CHARS);
+            charCount.classList.toggle('text-indigo-300', len <= MAX_TEXT_CHARS);
             if(audioState !== 'IDLE' && audioState !== 'LOADING') resetToIdle();
         });
 
@@ -480,30 +487,50 @@
         // KẾT NỐI GEMINI TTS API
         // ==========================================
 
-        async function generateVoiceWithAI() {
-            let text = textInput.value.trim();
-            if (!text) return;
 
-            const currentActiveKey = getActiveKey();
-            if (!currentActiveKey) {
-                document.getElementById('error-msg').innerHTML = "Chưa có API Key. Hãy bấm biểu tượng chìa khóa và nhập API Key trên thiết bị này.";
-                document.getElementById('error-modal').classList.remove('hidden');
-                return;
+        function splitTextForTTS(text, maxChars = TTS_CHUNK_CHARS) {
+            const clean = text.replace(/\s+/g, ' ').trim();
+            if (clean.length <= maxChars) return [clean];
+
+            const sentences = clean.match(/[^.!?。！？\n]+[.!?。！？]?/g) || [clean];
+            const chunks = [];
+            let current = "";
+
+            for (const sentenceRaw of sentences) {
+                const sentence = sentenceRaw.trim();
+                if (!sentence) continue;
+
+                if (sentence.length > maxChars) {
+                    if (current) {
+                        chunks.push(current.trim());
+                        current = "";
+                    }
+                    for (let i = 0; i < sentence.length; i += maxChars) {
+                        chunks.push(sentence.slice(i, i + maxChars).trim());
+                    }
+                    continue;
+                }
+
+                if ((current + " " + sentence).trim().length > maxChars) {
+                    chunks.push(current.trim());
+                    current = sentence;
+                } else {
+                    current = (current + " " + sentence).trim();
+                }
             }
 
-            const selectedVoiceId = voiceSelect.value;
-            const formatSelected = exportFormat.value.toUpperCase();
-            
-            // AI Prompt Engineering cho Cảm xúc và Tone Giọng
+            if (current) chunks.push(current.trim());
+            return chunks.filter(Boolean);
+        }
+
+        function buildInstructionPrefix(selectedVoiceId) {
             let instructionPrefix = "";
-            
-            // Hướng dẫn đặc biệt cho các giọng trẻ em (Kids)
+
             if (selectedVoiceId === 'Leda') instructionPrefix = "Say cheerfully and clearly like a 7 year old Vietnamese girl: ";
             else if (selectedVoiceId === 'Callirrhoe') instructionPrefix = "Say very excitedly and inspiringly like a 7 year old Vietnamese girl: ";
             else if (selectedVoiceId === 'Zephyr') instructionPrefix = "Say cheerfully and clearly like a 7 year old Vietnamese boy: ";
             else if (selectedVoiceId === 'Orus') instructionPrefix = "Say very excitedly and inspiringly like a 7 year old Vietnamese boy: ";
 
-            // Điều khiển Cao độ (Pitch) qua mệnh lệnh ngôn ngữ tự nhiên
             const pitchVal = parseFloat(pitchSlider.value);
             if (pitchVal > 0.4) {
                 instructionPrefix += instructionPrefix ? "with a high pitch voice: " : "Say with a very high pitch voice: ";
@@ -511,15 +538,14 @@
                 instructionPrefix += instructionPrefix ? "with a deep low voice: " : "Say with a deep low voice: ";
             }
 
-            // Text gửi lên AI
+            return instructionPrefix;
+        }
+
+        async function callGeminiTTS(text, selectedVoiceId, apiKey) {
+            const instructionPrefix = buildInstructionPrefix(selectedVoiceId);
             const finalPromptText = instructionPrefix ? `"${instructionPrefix} ${text}"` : text;
 
-            audioState = 'LOADING';
-            loadingFormatText.textContent = formatSelected;
-            loadingOverlay.classList.remove('hidden');
-            
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${currentActiveKey}`;
-            
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
             const payload = {
                 contents: [{ parts: [{ text: finalPromptText }] }],
                 generationConfig: {
@@ -553,7 +579,7 @@
                     const result = await response.json();
                     const inlineData = result.candidates?.[0]?.content?.parts?.[0]?.inlineData;
                     const base64Audio = inlineData?.data;
-                    
+
                     if (!base64Audio) throw new Error("Không nhận được dữ liệu âm thanh từ AI.");
 
                     let sampleRate = 24000;
@@ -562,47 +588,124 @@
                         if (match) sampleRate = parseInt(match[1]);
                     }
 
-                    // Biến đổi định dạng dựa trên Option
-                    let audioBlob;
-                    if (formatSelected === 'MP3') {
-                        audioBlob = pcmToMp3(base64Audio, sampleRate);
-                    } else {
-                        audioBlob = pcmToWav(base64Audio, sampleRate);
-                    }
-                    
-                    if (currentAudioUrl) URL.revokeObjectURL(currentAudioUrl); 
-                    currentAudioUrl = URL.createObjectURL(audioBlob);
-                    
-                    audioPlayer.src = currentAudioUrl;
-                    audioPlayer.playbackRate = parseFloat(speedSlider.value); // Áp dụng tốc độ
-                    
-                    btnDownload.href = currentAudioUrl;
-                    btnDownload.download = `Sunbot_Voice_${selectedVoiceId}.${formatSelected.toLowerCase()}`;
-                    btnDownload.classList.remove('hidden');
-                    btnDownload.classList.add('flex');
-                    
-                    audioState = 'HAS_AUDIO';
-                    loadingOverlay.classList.add('hidden');
-                    
-                    playAudio();
-                    return;
+                    return { base64Audio, sampleRate };
 
                 } catch (error) {
                     if (retryCount < maxRetries && !error.message.includes("400") && !error.message.includes("403")) {
                         await new Promise(resolve => setTimeout(resolve, delays[retryCount]));
                         retryCount++;
                     } else {
-                        loadingOverlay.classList.add('hidden');
-                        let errorMessageText = "Không thể kết nối đến AI lúc này.";
-                        if (error.message.includes("400") || error.message.includes("403")) {
-                            errorMessageText = "API Key không hợp lệ. Vui lòng kiểm tra lại.";
-                        }
-                        document.getElementById('error-msg').innerHTML = errorMessageText + `<br><br><span class="text-[10px] text-rose-300 font-mono">Log: ${error.message.substring(0, 100)}</span>`;
-                        document.getElementById('error-modal').classList.remove('hidden');
-                        resetToIdle();
-                        return;
+                        throw error;
                     }
                 }
+            }
+        }
+
+        function base64PcmToBytes(base64Pcm) {
+            const binaryStr = atob(base64Pcm);
+            const bytes = new Uint8Array(binaryStr.length);
+            for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+            return bytes;
+        }
+
+        function bytesToBase64(bytes) {
+            let binary = "";
+            const chunkSize = 0x8000;
+            for (let i = 0; i < bytes.length; i += chunkSize) {
+                binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+            }
+            return btoa(binary);
+        }
+
+        function concatPcmBase64(parts) {
+            const arrays = parts.map(p => base64PcmToBytes(p.base64Audio));
+            const total = arrays.reduce((sum, arr) => sum + arr.length, 0);
+            const merged = new Uint8Array(total);
+            let offset = 0;
+            for (const arr of arrays) {
+                merged.set(arr, offset);
+                offset += arr.length;
+            }
+            return bytesToBase64(merged);
+        }
+
+        async function generateVoiceWithAI() {
+            let text = textInput.value.trim();
+            if (!text) return;
+
+            if (text.length > MAX_TEXT_CHARS) {
+                document.getElementById('error-msg').innerHTML = `Văn bản đang có ${text.length} ký tự. Giới hạn hiện tại của app là ${MAX_TEXT_CHARS} ký tự.`;
+                document.getElementById('error-modal').classList.remove('hidden');
+                return;
+            }
+
+            const currentActiveKey = getActiveKey();
+            if (!currentActiveKey) {
+                document.getElementById('error-msg').innerHTML = "Chưa có API Key. Hãy bấm biểu tượng chìa khóa và nhập API Key trên thiết bị này.";
+                document.getElementById('error-modal').classList.remove('hidden');
+                return;
+            }
+
+            const selectedVoiceId = voiceSelect.value;
+            const formatSelected = exportFormat.value.toUpperCase();
+            const chunks = splitTextForTTS(text);
+
+            audioState = 'LOADING';
+            loadingFormatText.textContent = formatSelected;
+            loadingOverlay.classList.remove('hidden');
+
+            try {
+                const audioParts = [];
+                let sampleRate = 24000;
+
+                for (let i = 0; i < chunks.length; i++) {
+                    document.querySelector('#loading-overlay h3').textContent = chunks.length > 1
+                        ? `AI Đang Xử Lý Đoạn ${i + 1}/${chunks.length}...`
+                        : "AI Đang Xử Lý Giọng Nói...";
+
+                    const part = await callGeminiTTS(chunks[i], selectedVoiceId, currentActiveKey);
+                    audioParts.push(part);
+                    sampleRate = part.sampleRate || sampleRate;
+                }
+
+                const mergedBase64Audio = concatPcmBase64(audioParts);
+
+                let audioBlob;
+                if (formatSelected === 'MP3') {
+                    audioBlob = pcmToMp3(mergedBase64Audio, sampleRate);
+                } else {
+                    audioBlob = pcmToWav(mergedBase64Audio, sampleRate);
+                }
+
+                if (currentAudioUrl) URL.revokeObjectURL(currentAudioUrl);
+                currentAudioUrl = URL.createObjectURL(audioBlob);
+
+                audioPlayer.src = currentAudioUrl;
+                audioPlayer.playbackRate = parseFloat(speedSlider.value);
+
+                btnDownload.href = currentAudioUrl;
+                btnDownload.download = `Sunbot_Voice_${selectedVoiceId}.${formatSelected.toLowerCase()}`;
+                btnDownload.classList.remove('hidden');
+                btnDownload.classList.add('flex');
+
+                audioState = 'HAS_AUDIO';
+                loadingOverlay.classList.add('hidden');
+
+                document.querySelector('#loading-overlay h3').textContent = "AI Đang Xử Lý Giọng Nói...";
+                playAudio();
+
+            } catch (error) {
+                loadingOverlay.classList.add('hidden');
+                document.querySelector('#loading-overlay h3').textContent = "AI Đang Xử Lý Giọng Nói...";
+
+                let errorMessageText = "Không thể kết nối đến AI lúc này.";
+                if (error.message.includes("400") || error.message.includes("403")) {
+                    errorMessageText = "API Key không hợp lệ hoặc yêu cầu quá dài với model hiện tại. Vui lòng kiểm tra lại.";
+                }
+
+                document.getElementById('error-msg').innerHTML = errorMessageText + `<br><br><span class="text-[10px] text-rose-300 font-mono">Log: ${error.message.substring(0, 160)}</span>`;
+                document.getElementById('error-modal').classList.remove('hidden');
+                resetToIdle();
             }
         }
         
