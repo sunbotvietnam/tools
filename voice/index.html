@@ -256,7 +256,7 @@
                 <i data-lucide="key" class="text-indigo-400"></i> Cấu hình API Key Cá Nhân
             </h3>
             <p class="text-slate-300 text-sm leading-relaxed mb-4">
-                Mã API Key đã được bảo mật. Nhập mã mới để ghi đè (nếu cần).
+                Không lưu API Key trong mã nguồn khi up GitHub. Hãy nhập API Key trên thiết bị đang dùng; key sẽ chỉ lưu trong trình duyệt này.
             </p>
             <input type="password" id="api-key-input" placeholder="Dán mã API Key vào đây..." class="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 mb-6 font-mono text-sm">
             <div class="flex justify-end gap-3">
@@ -287,10 +287,10 @@
         // Init Icons
         lucide.createIcons();
 
-        // TÍCH HỢP SẴN KEY CỦA BẠN (Hardcoded fallback)
-        const HARDCODED_API_KEY = "AIzaSyAysTaDiv1EWpvvnmUYjihBOsWe0owQKrQ"; 
+        // API KEY: để trống khi up GitHub. Nhập key trong giao diện hoặc tự điền sau khi dùng riêng.
+        const HARDCODED_API_KEY = ""; // Điền API key cá nhân tại đây nếu muốn dùng cố định trên máy riêng. Không commit key thật lên GitHub. 
 
-        // Ưu tiên Key người dùng nhập, nếu không có thì lấy Key Hardcode
+        // Ưu tiên key lưu trong trình duyệt. Nếu chưa có, dùng HARDCODED_API_KEY nếu bạn tự điền sau.
         function getActiveKey() {
             const localKey = localStorage.getItem('sunbot_gemini_key');
             if (localKey && localKey.trim() !== '') return localKey;
@@ -299,7 +299,7 @@
 
         // Logic Modal Settings
         function openSettings() {
-            document.getElementById('api-key-input').value = localStorage.getItem('sunbot_gemini_key') || HARDCODED_API_KEY;
+            document.getElementById('api-key-input').value = localStorage.getItem('sunbot_gemini_key') || '';
             document.getElementById('settings-modal').classList.remove('hidden');
         }
         function closeSettings() {
@@ -307,7 +307,8 @@
         }
         function saveApiKey() {
             const val = document.getElementById('api-key-input').value.trim();
-            localStorage.setItem('sunbot_gemini_key', val);
+            if (val) localStorage.setItem('sunbot_gemini_key', val);
+            else localStorage.removeItem('sunbot_gemini_key');
             closeSettings();
         }
 
@@ -485,7 +486,7 @@
 
             const currentActiveKey = getActiveKey();
             if (!currentActiveKey) {
-                document.getElementById('error-msg').innerHTML = "Chưa có API Key. Vui lòng nhập Key hợp lệ.";
+                document.getElementById('error-msg').innerHTML = "Chưa có API Key. Hãy bấm biểu tượng chìa khóa và nhập API Key trên thiết bị này.";
                 document.getElementById('error-modal').classList.remove('hidden');
                 return;
             }
