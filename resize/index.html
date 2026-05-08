@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Optimizer Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script>
+        tailwind.config = { theme: { extend: { colors: { cam: { 50: '#fff7ed', 100: '#ffedd5', 500: '#f97316', 600: '#ea580c', 700: '#c2410c' } } } } }
+    </script>
+    <style>
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 20px; width: 20px; border-radius: 50%; background: #f97316; cursor: pointer; margin-top: -8px; transition: transform 0.1s; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 6px; cursor: pointer; background: #e2e8f0; border-radius: 3px; }
+        .pattern-bg { background-image: linear-gradient(45deg, #f1f5f9 25%, transparent 25%), linear-gradient(-45deg, #f1f5f9 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #f1f5f9 75%), linear-gradient(-45deg, transparent 75%, #f1f5f9 75%); background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0px; }
+        .spinner { border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top: 3px solid #fff; width: 20px; height: 20px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        /* Zoom Effect for Single Preview */
+        #preview-zoom-container { overflow: hidden; position: relative; }
+        #preview-zoom-img { transition: transform 0.1s ease-out; transform-origin: center center; width: 100%; height: 100%; object-fit: contain; }
+        #preview-zoom-container:hover #preview-zoom-img { transform: scale(2.5); cursor: crosshair; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans min-h-screen flex flex-col selection:bg-cam-100 selection:text-cam-700">
+
+    <header class="bg-white shadow-sm border-b border-gray-100 py-3 sticky top-0 z-50">
+        <div class="max-w-6xl mx-auto px-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 bg-cam-500 rounded-lg flex items-center justify-center text-white">
+                    <i data-lucide="command" class="w-4 h-4"></i>
+                </div>
+                <h1 class="text-lg font-bold text-gray-900 tracking-tight">Image Optimizer Pro</h1>
+            </div>
+            <div id="stats-badge" class="hidden bg-cam-50 text-cam-700 px-3 py-1 rounded-md text-sm font-bold items-center gap-2 border border-cam-200">
+                <span id="file-count-display">0</span> file(s)
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-grow max-w-6xl mx-auto w-full px-4 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6 relative">
+        
+        <!-- Cột trái: Quản lý File & Preview -->
+        <div class="lg:col-span-7 flex flex-col gap-4">
+            
+            <div id="drop-zone" class="relative group w-full h-32 bg-white rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center cursor-pointer transition-all hover:border-cam-500 hover:bg-cam-50 overflow-hidden shadow-sm">
+                <input type="file" id="file-input" accept="image/*" multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                <div class="flex items-center gap-3 text-gray-500 group-hover:text-cam-600 transition-colors">
+                    <i data-lucide="upload-cloud" class="w-6 h-6"></i>
+                    <p class="font-medium text-sm">Kéo thả file hoặc <kbd class="bg-gray-100 border border-gray-200 rounded px-1.5 font-mono text-xs text-gray-600">Ctrl+V</kbd></p>
+                </div>
+            </div>
+
+            <div class="flex justify-between items-center px-1">
+                <h3 class="text-sm font-bold text-gray-700">Workspace</h3>
+                <button id="btn-clear-all" class="hidden text-xs text-red-500 hover:text-red-700 font-medium">Clear All</button>
+            </div>
+
+            <!-- Single Image Preview (Zoom & Stats) -->
+            <div id="single-preview-wrapper" class="hidden flex-col gap-2">
+                <div class="flex justify-between items-center bg-white p-2.5 rounded-lg border border-gray-200 shadow-sm">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="pie-chart" class="w-4 h-4 text-cam-500"></i>
+                        <span class="text-xs text-gray-700" id="preview-size-text">Đang phân tích...</span>
+                    </div>
+                    <span class="text-[10px] font-mono font-bold bg-cam-50 text-cam-700 border border-cam-200 px-2 py-0.5 rounded" id="preview-dimensions-text">-- x --</span>
+                </div>
+                <div id="preview-zoom-container" class="w-full h-[360px] bg-white rounded-xl border border-gray-200 shadow-sm pattern-bg">
+                    <img id="preview-zoom-img" src="" alt="Preview">
+                </div>
+                <p class="text-[11px] text-gray-400 text-center flex items-center justify-center gap-1"><i data-lucide="zoom-in" class="w-3 h-3"></i> Rê chuột để soi chi tiết ảnh đã xử lý</p>
+            </div>
+
+            <!-- Batch Image List -->
+            <div id="file-list-container" class="hidden flex-col gap-2 bg-white p-3 rounded-xl border border-gray-200 shadow-sm max-h-[400px] overflow-y-auto">
+                <div id="file-list" class="flex flex-col gap-2">
+                    <!-- Items -->
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Cột phải: Cài đặt -->
+        <div class="lg:col-span-5 flex flex-col gap-4 sticky top-20 h-fit">
+            
+            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                
+                <!-- 1. Kích thước -->
+                <div class="mb-5">
+                    <label class="block text-xs font-bold text-gray-800 mb-2 uppercase tracking-wide">1. Resize & Crop</label>
+                    
+                    <!-- Presets -->
+                    <div class="mb-3">
+                        <select id="preset-select" class="w-full p-2 text-xs bg-white border border-gray-200 rounded-lg outline-none text-gray-700 focus:border-cam-500">
+                            <option value="">Lựa chọn kích thước chuẩn...</option>
+                            <option value="auto">Giữ nguyên gốc (Chỉ đổi định dạng/nén)</option>
+                            <option value="1080x1080">Vuông - Social (1080 x 1080)</option>
+                            <option value="1280x720">Ngang - Thumbnail (1280 x 720)</option>
+                            <option value="1080x1920">Dọc - Story/Reels (1080 x 1920)</option>
+                            <option value="512x512">Vuông - App Icon (512 x 512)</option>
+                        </select>
+                    </div>
+
+                    <div class="flex items-center gap-2 mb-2">
+                        <div class="flex-1 relative">
+                            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-bold">W</span>
+                            <input type="number" id="input-w" placeholder="Auto" class="w-full pl-8 pr-2 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-1 focus:ring-cam-500 outline-none">
+                        </div>
+                        <i data-lucide="x" class="w-3 h-3 text-gray-400"></i>
+                        <div class="flex-1 relative">
+                            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-bold">H</span>
+                            <input type="number" id="input-h" placeholder="Auto" class="w-full pl-8 pr-2 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-1 focus:ring-cam-500 outline-none">
+                        </div>
+                    </div>
+                    
+                    <div id="crop-mode-container" class="opacity-50 pointer-events-none transition-opacity">
+                        <label class="block text-[10px] text-gray-500 mb-1 mt-1 font-medium uppercase tracking-wide">Xử lý khi ép sai tỷ lệ gốc:</label>
+                        <select id="crop-mode" class="w-full p-2 text-xs bg-gray-50 border border-gray-200 rounded-lg outline-none text-gray-600 focus:border-cam-500">
+                            <option value="cover">Crop Center (Cắt tâm - Không méo)</option>
+                            <option value="contain">Fit (Thêm viền bù khoảng trống)</option>
+                            <option value="stretch">Stretch (Ép tỷ lệ méo ảnh)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 2. Nén & Format -->
+                <div class="mb-5">
+                    <div class="flex justify-between items-end mb-2">
+                        <label class="block text-xs font-bold text-gray-800 uppercase tracking-wide">2. Format & Quality</label>
+                        <span id="quality-val" class="text-xs font-bold text-cam-700 bg-cam-50 px-1.5 rounded">80%</span>
+                    </div>
+                    <div class="flex gap-2 mb-3">
+                        <button class="format-btn flex-1 py-1.5 text-xs font-medium rounded border border-gray-200 bg-white text-gray-600 transition-all" data-format="image/jpeg">JPG</button>
+                        <button class="format-btn flex-1 py-1.5 text-xs font-medium rounded border border-cam-500 bg-cam-500 text-white transition-all shadow-sm" data-format="image/webp">WEBP</button>
+                        <button class="format-btn flex-1 py-1.5 text-xs font-medium rounded border border-gray-200 bg-white text-gray-600 transition-all" data-format="image/png">PNG</button>
+                    </div>
+                    <div id="quality-slider-container">
+                        <input type="range" id="input-quality" min="0.1" max="1" step="0.05" value="0.8">
+                    </div>
+                </div>
+
+                <!-- 3. Smart Naming -->
+                <div class="mb-6">
+                    <label class="block text-xs font-bold text-gray-800 mb-2 uppercase tracking-wide flex items-center justify-between">
+                        <span>3. Smart Naming</span>
+                        <input type="checkbox" id="check-naming" checked class="w-3.5 h-3.5 accent-cam-500">
+                    </label>
+                    
+                    <div id="naming-options" class="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                        <div class="flex gap-2 mb-2">
+                            <input type="text" id="input-prefix" placeholder="Tiền tố" class="w-1/4 p-2 text-xs bg-white border border-gray-200 rounded outline-none focus:border-cam-500">
+                            <input type="text" id="input-basename" placeholder="Tên chính (Trống = Lấy gốc)" class="w-2/4 p-2 text-xs bg-white border border-gray-200 rounded outline-none focus:border-cam-500 font-medium">
+                            <input type="text" id="input-suffix" placeholder="Hậu tố" class="w-1/4 p-2 text-xs bg-white border border-gray-200 rounded outline-none focus:border-cam-500">
+                        </div>
+                        
+                        <div class="mt-2 text-[10px] text-gray-500 font-mono bg-white p-1.5 border border-gray-100 rounded break-all">
+                            => <span id="naming-preview" class="text-cam-600 font-bold"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Nút Hành động -->
+                <button id="btn-process" disabled class="w-full bg-gray-200 text-gray-400 font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-all cursor-not-allowed">
+                    Chọn ảnh để bắt đầu
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <canvas id="virtual-canvas" class="hidden"></canvas>
+
+    <script>
+        lucide.createIcons();
+
+        let filesList = []; 
+        let outputFormat = 'image/webp'; 
+        let previewTimeout;
+
+        const virtualCanvas = document.getElementById('virtual-canvas');
+        const ctx = virtualCanvas.getContext('2d');
+
+        const els = {
+            fileInput: document.getElementById('file-input'),
+            dropZone: document.getElementById('drop-zone'),
+            
+            singlePreviewWrapper: document.getElementById('single-preview-wrapper'),
+            previewZoomImg: document.getElementById('preview-zoom-img'),
+            previewZoomContainer: document.getElementById('preview-zoom-container'),
+            previewSizeText: document.getElementById('preview-size-text'),
+            previewDimensionsText: document.getElementById('preview-dimensions-text'),
+            
+            fileListContainer: document.getElementById('file-list-container'),
+            fileList: document.getElementById('file-list'),
+            
+            statsBadge: document.getElementById('stats-badge'),
+            fileCountDisplay: document.getElementById('file-count-display'),
+            btnClearAll: document.getElementById('btn-clear-all'),
+            
+            presetSelect: document.getElementById('preset-select'),
+            inputW: document.getElementById('input-w'),
+            inputH: document.getElementById('input-h'),
+            cropModeContainer: document.getElementById('crop-mode-container'),
+            cropMode: document.getElementById('crop-mode'),
+            
+            formatBtns: document.querySelectorAll('.format-btn'),
+            inputQuality: document.getElementById('input-quality'),
+            qualityVal: document.getElementById('quality-val'),
+            qualityContainer: document.getElementById('quality-slider-container'),
+            
+            checkNaming: document.getElementById('check-naming'),
+            namingOptions: document.getElementById('naming-options'),
+            inputPrefix: document.getElementById('input-prefix'),
+            inputBaseName: document.getElementById('input-basename'),
+            inputSuffix: document.getElementById('input-suffix'),
+            namingPreview: document.getElementById('naming-preview'),
+            
+            btnProcess: document.getElementById('btn-process')
+        };
+
+        // --- TIỆN ÍCH DUNG LƯỢNG ---
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024, i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + ['B', 'KB', 'MB'][i];
+        }
+
+        // --- ZOOM LOUPE EFFECT ---
+        els.previewZoomContainer.addEventListener('mousemove', function(e) {
+            const rect = this.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * 100;
+            const y = ((e.clientY - rect.top) / rect.height) * 100;
+            els.previewZoomImg.style.transformOrigin = `${x}% ${y}%`;
+        });
+
+        // --- QUẢN LÝ FILE ---
+        els.fileInput.addEventListener('change', (e) => addFiles(e.target.files));
+        els.dropZone.addEventListener('dragover', e => { e.preventDefault(); els.dropZone.classList.add('border-cam-500', 'bg-cam-50'); });
+        els.dropZone.addEventListener('dragleave', () => els.dropZone.classList.remove('border-cam-500', 'bg-cam-50'));
+        els.dropZone.addEventListener('drop', e => {
+            e.preventDefault(); els.dropZone.classList.remove('border-cam-500', 'bg-cam-50');
+            addFiles(e.dataTransfer.files);
+        });
+        window.addEventListener('paste', e => {
+            if (e.clipboardData && e.clipboardData.files.length > 0) addFiles(e.clipboardData.files);
+        });
+
+        function addFiles(files) {
+            if (!files || files.length === 0) return;
+            Array.from(files).forEach(file => {
+                if (file.type.startsWith('image/')) {
+                    filesList.push({ id: Math.random().toString(36).substring(7), file, originalName: file.name });
+                }
+            });
+            updateUIList();
+        }
+
+        function removeFile(id) {
+            filesList = filesList.filter(f => f.id !== id);
+            updateUIList();
+        }
+
+        els.btnClearAll.addEventListener('click', () => {
+            filesList = []; els.fileInput.value = ""; updateUIList();
+        });
+
+        function updateUIList() {
+            els.fileList.innerHTML = "";
+            const count = filesList.length;
+
+            if (count === 0) {
+                // RESET STATE
+                els.statsBadge.classList.add('hidden'); els.statsBadge.classList.remove('flex');
+                els.btnClearAll.classList.add('hidden');
+                els.singlePreviewWrapper.classList.add('hidden'); els.singlePreviewWrapper.classList.remove('flex');
+                els.fileListContainer.classList.add('hidden'); els.fileListContainer.classList.remove('flex');
+                els.btnProcess.disabled = true;
+                els.btnProcess.className = "w-full bg-gray-200 text-gray-400 font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 cursor-not-allowed";
+                els.btnProcess.innerHTML = `Chọn ảnh để bắt đầu`;
+                updateNamingPreview();
+                return;
+            }
+
+            els.statsBadge.classList.remove('hidden'); els.statsBadge.classList.add('flex');
+            els.fileCountDisplay.innerText = count;
+            els.btnClearAll.classList.remove('hidden');
+            
+            els.btnProcess.disabled = false;
+            els.btnProcess.className = "w-full bg-cam-500 hover:bg-cam-600 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-all shadow-md";
+
+            if (count === 1) {
+                // SINGLE IMAGE STATE
+                els.fileListContainer.classList.add('hidden'); els.fileListContainer.classList.remove('flex');
+                els.singlePreviewWrapper.classList.remove('hidden'); els.singlePreviewWrapper.classList.add('flex');
+                
+                els.btnProcess.innerHTML = `<i data-lucide="download" class="w-4 h-4"></i> Tải Ảnh Xuống`;
+                triggerPreviewUpdate(); // Render live preview & stats
+            } else {
+                // BATCH STATE
+                els.singlePreviewWrapper.classList.add('hidden'); els.singlePreviewWrapper.classList.remove('flex');
+                els.fileListContainer.classList.remove('hidden'); els.fileListContainer.classList.add('flex');
+                
+                filesList.forEach(item => {
+                    const objUrl = URL.createObjectURL(item.file);
+                    const div = document.createElement('div');
+                    div.className = "flex items-center gap-3 p-1.5 hover:bg-gray-50 rounded group border border-transparent hover:border-gray-100 transition-colors";
+                    div.innerHTML = `
+                        <img src="${objUrl}" class="w-8 h-8 rounded object-cover border border-gray-200">
+                        <div class="flex-1 min-w-0"><p class="text-xs text-gray-700 truncate">${item.originalName}</p></div>
+                        <button onclick="removeFile('${item.id}')" class="p-1 text-gray-400 hover:text-red-500 rounded"><i data-lucide="x" class="w-4 h-4"></i></button>
+                    `;
+                    els.fileList.appendChild(div);
+                });
+                els.btnProcess.innerHTML = `<i data-lucide="archive" class="w-4 h-4"></i> Đóng Gói ZIP`;
+            }
+            lucide.createIcons();
+            updateNamingPreview();
+        }
+
+        // --- LIVE PREVIEW LOGIC CHO 1 ẢNH ---
+        function triggerPreviewUpdate() {
+            if (filesList.length !== 1) return;
+            
+            clearTimeout(previewTimeout);
+            els.previewSizeText.innerHTML = "Đang xử lý kích thước...";
+            
+            previewTimeout = setTimeout(async () => {
+                const w = els.inputW.value, h = els.inputH.value, mode = els.cropMode.value, q = parseFloat(els.inputQuality.value);
+                const result = await processSingleImage(filesList[0], w, h, mode, q);
+                
+                // Giải phóng url cũ tránh tràn RAM
+                if (els.previewZoomImg.src.startsWith('blob:')) URL.revokeObjectURL(els.previewZoomImg.src);
+                
+                const objUrl = URL.createObjectURL(result.blob);
+                els.previewZoomImg.src = objUrl;
+                
+                const originalSize = filesList[0].file.size;
+                const newSize = result.blob.size;
+                const saved = originalSize > newSize ? Math.round((originalSize - newSize) / originalSize * 100) : 0;
+                
+                els.previewDimensionsText.innerText = `${result.width} x ${result.height}`;
+                
+                if (newSize < originalSize) {
+                    els.previewSizeText.innerHTML = `Gốc: <b>${formatBytes(originalSize)}</b> &rarr; Dự kiến: <b class="text-green-600">${formatBytes(newSize)}</b> <span class="text-green-600 text-[10px] ml-1 bg-green-50 px-1 rounded">- ${saved}%</span>`;
+                } else {
+                    els.previewSizeText.innerHTML = `Gốc: <b>${formatBytes(originalSize)}</b> &rarr; Dự kiến: <b class="text-cam-600">${formatBytes(newSize)}</b>`;
+                }
+            }, 300);
+        }
+
+        // --- CÀI ĐẶT UI & LẮNG NGHE THAY ĐỔI ---
+        els.presetSelect.addEventListener('change', (e) => {
+            const val = e.target.value;
+            if (!val || val === 'auto') {
+                els.inputW.value = ''; els.inputH.value = '';
+            } else {
+                const [w, h] = val.split('x');
+                els.inputW.value = w; els.inputH.value = h;
+            }
+            checkCropModeVisibility(); updateNamingPreview(); triggerPreviewUpdate();
+        });
+
+        function checkCropModeVisibility() {
+            if (els.inputW.value && els.inputH.value) els.cropModeContainer.classList.remove('opacity-50', 'pointer-events-none');
+            else els.cropModeContainer.classList.add('opacity-50', 'pointer-events-none');
+            triggerPreviewUpdate();
+        }
+        
+        [els.inputW, els.inputH, els.cropMode].forEach(el => {
+            el.addEventListener('input', () => { els.presetSelect.value = ''; checkCropModeVisibility(); updateNamingPreview(); });
+        });
+
+        els.formatBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                outputFormat = e.target.dataset.format;
+                els.formatBtns.forEach(b => {
+                    b.className = 'format-btn flex-1 py-1.5 text-xs font-medium rounded border border-gray-200 bg-white text-gray-600 transition-all';
+                });
+                e.target.className = 'format-btn flex-1 py-1.5 text-xs font-medium rounded border border-cam-500 bg-cam-500 text-white transition-all shadow-sm';
+                
+                els.qualityContainer.style.opacity = outputFormat === 'image/png' ? '0.3' : '1';
+                els.qualityContainer.style.pointerEvents = outputFormat === 'image/png' ? 'none' : 'auto';
+                updateNamingPreview(); triggerPreviewUpdate();
+            });
+        });
+
+        els.inputQuality.addEventListener('input', e => {
+            els.qualityVal.innerText = Math.round(e.target.value * 100) + '%';
+            triggerPreviewUpdate();
+        });
+
+        // --- SMART NAMING ---
+        function sanitizeText(str) {
+            str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, "a").replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, "e").replace(/ì|í|ị|ỉ|ĩ/g, "i")
+                     .replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g, "o").replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g, "u").replace(/ỳ|ý|ỵ|ỷ|ỹ/g, "y").replace(/đ/g, "d")
+                     .replace(/À|Á|Ạ|Ả|Ã|Â|Ầ|Ấ|Ậ|Ẩ|Ẫ|Ă|Ằ|Ắ|Ặ|Ẳ|Ẵ/g, "a").replace(/È|É|Ẹ|Ẻ|Ẽ|Ê|Ề|Ế|Ệ|Ể|Ễ/g, "e").replace(/Ì|Í|Ị|Ỉ|Ĩ/g, "i")
+                     .replace(/Ò|Ó|Ọ|Ỏ|Õ|Ô|Ồ|Ố|Ộ|Ổ|Ỗ|Ơ|Ờ|Ớ|Ợ|Ở|Ỡ/g, "o").replace(/Ù|Ú|Ụ|Ủ|Ũ|Ư|Ừ|Ứ|Ự|Ử|Ữ/g, "u").replace(/Ỳ|Ý|Ỵ|Ỷ|Ỹ/g, "y").replace(/Đ/g, "d");
+            return str.toLowerCase().trim().replace(/[^a-z0-9\s-]/g, '').replace(/[\s-]+/g, '-');
+        }
+
+        els.checkNaming.addEventListener('change', e => {
+            els.namingOptions.style.opacity = e.target.checked ? '1' : '0.4';
+            els.namingOptions.style.pointerEvents = e.target.checked ? 'auto' : 'none';
+            updateNamingPreview();
+        });
+
+        [els.inputPrefix, els.inputBaseName, els.inputSuffix].forEach(el => el.addEventListener('input', updateNamingPreview));
+
+        function generateFinalName(originalName, index, isSingle) {
+            const ext = outputFormat.split('/')[1];
+            let finalName = "";
+            
+            if (!els.checkNaming.checked) {
+                let base = originalName.substring(0, originalName.lastIndexOf('.')) || originalName;
+                finalName = isSingle ? `${base}.${ext}` : `${base}_${index.toString().padStart(2, '0')}.${ext}`;
+            } else {
+                const pre = els.inputPrefix.value.trim();
+                const baseInput = els.inputBaseName.value.trim();
+                const suf = els.inputSuffix.value.trim();
+                
+                let parts = [];
+                if (pre) parts.push(sanitizeText(pre));
+                
+                if (baseInput) parts.push(sanitizeText(baseInput));
+                else {
+                    let origBase = originalName.substring(0, originalName.lastIndexOf('.')) || originalName;
+                    parts.push(sanitizeText(origBase));
+                }
+                
+                if (suf) parts.push(sanitizeText(suf));
+                if (!isSingle) parts.push(index.toString().padStart(2, '0'));
+
+                finalName = parts.join('-') + '.' + ext;
+            }
+
+            // Cơ chế bảo vệ: Chống trùng y hệt tên gốc khi xuất file đơn để khỏi ghi đè mất file trên máy
+            if (isSingle && finalName.toLowerCase() === originalName.toLowerCase()) {
+                finalName = finalName.replace(`.${ext}`, `-optimized.${ext}`);
+            }
+
+            return finalName;
+        }
+
+        function updateNamingPreview() {
+            const sample = filesList.length > 0 ? filesList[0].originalName : "anh_goc.jpg";
+            const isSingle = filesList.length === 1;
+            
+            if (!els.checkNaming.checked) {
+                els.namingPreview.innerText = "Giữ nguyên cấu trúc tên";
+                return;
+            }
+            
+            els.namingPreview.innerText = generateFinalName(sample, 1, isSingle) + (isSingle ? '' : ' ... (-02, -03)');
+        }
+
+        // --- CORE PROCESSOR CHÍNH ---
+        function processSingleImage(item, inputW, inputH, mode, quality) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => {
+                    const imgW = img.width, imgH = img.height;
+                    let targetW = imgW, targetH = imgH, applyCrop = false;
+
+                    if (inputW && !inputH) { targetW = parseInt(inputW); targetH = Math.round(targetW * (imgH / imgW)); }
+                    else if (!inputW && inputH) { targetH = parseInt(inputH); targetW = Math.round(targetH * (imgW / imgH)); }
+                    else if (inputW && inputH) { targetW = parseInt(inputW); targetH = parseInt(inputH); applyCrop = true; }
+
+                    virtualCanvas.width = targetW; virtualCanvas.height = targetH;
+                    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+
+                    if (outputFormat !== 'image/png') { ctx.fillStyle = '#FFFFFF'; ctx.fillRect(0, 0, targetW, targetH); }
+                    else { ctx.clearRect(0, 0, targetW, targetH); }
+
+                    let dx = 0, dy = 0, dw = targetW, dh = targetH;
+                    if (applyCrop) {
+                        if (mode === 'cover') { const s = Math.max(targetW/imgW, targetH/imgH); dw = imgW*s; dh = imgH*s; dx = (targetW-dw)/2; dy = (targetH-dh)/2; }
+                        else if (mode === 'contain') { const s = Math.min(targetW/imgW, targetH/imgH); dw = imgW*s; dh = imgH*s; dx = (targetW-dw)/2; dy = (targetH-dh)/2; }
+                    }
+                    ctx.drawImage(img, dx, dy, dw, dh);
+                    
+                    virtualCanvas.toBlob(blob => {
+                        resolve({ blob, width: targetW, height: targetH });
+                    }, outputFormat, quality);
+                };
+                img.onerror = reject; img.src = URL.createObjectURL(item.file);
+            });
+        }
+
+        els.btnProcess.addEventListener('click', async () => {
+            if (filesList.length === 0) return;
+            const originalHtml = els.btnProcess.innerHTML;
+            els.btnProcess.disabled = true;
+
+            try {
+                const w = els.inputW.value, h = els.inputH.value, mode = els.cropMode.value, q = parseFloat(els.inputQuality.value);
+                const isSingle = filesList.length === 1;
+
+                if (isSingle) {
+                    els.btnProcess.innerHTML = `<div class="spinner"></div> Đang xử lý...`;
+                    const result = await processSingleImage(filesList[0], w, h, mode, q);
+                    const finalName = generateFinalName(filesList[0].originalName, 1, true);
+                    
+                    const url = URL.createObjectURL(result.blob);
+                    const link = document.createElement('a'); link.href = url; link.download = finalName;
+                    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                } else {
+                    const zip = new JSZip();
+                    for (let i = 0; i < filesList.length; i++) {
+                        els.btnProcess.innerHTML = `<div class="spinner"></div> ${i+1}/${filesList.length}...`;
+                        const result = await processSingleImage(filesList[i], w, h, mode, q);
+                        zip.file(generateFinalName(filesList[i].originalName, i+1, false), result.blob);
+                    }
+                    els.btnProcess.innerHTML = `<div class="spinner"></div> Zipping...`;
+                    const zipBlob = await zip.generateAsync({ type: "blob" });
+                    const url = URL.createObjectURL(zipBlob);
+                    
+                    const link = document.createElement('a'); link.href = url; link.download = `Batch_${new Date().getTime()}.zip`;
+                    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                }
+
+                els.btnProcess.innerHTML = `<i data-lucide="check" class="w-4 h-4"></i> Hoàn tất!`;
+                lucide.createIcons();
+                setTimeout(() => { els.btnProcess.disabled = false; els.btnProcess.innerHTML = originalHtml; }, 2000);
+
+            } catch (err) {
+                console.error(err); alert("Lỗi xử lý!");
+                els.btnProcess.disabled = false; els.btnProcess.innerHTML = originalHtml;
+            }
+        });
+    </script>
+</body>
+</html>

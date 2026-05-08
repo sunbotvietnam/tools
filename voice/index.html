@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sunbot Voice - AI Text to Speech (Pro)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Nunito -->
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- LameJS for MP3 Encoding -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Nunito', 'sans-serif'],
+                    },
+                    colors: {
+                        'app-bg': '#1e1b4b',
+                        'app-card': 'rgba(30, 41, 59, 0.4)',
+                        'app-border': 'rgba(255, 255, 255, 0.08)',
+                        'app-accent': '#6366f1',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background: radial-gradient(circle at 50% 0%, #2e2860 0%, #111025 80%, #0a0a14 100%);
+            color: #f8fafc;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Glassmorphism utils */
+        .glass-panel {
+            background: var(--tw-colors-app-card);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--tw-colors-app-border);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+        }
+
+        /* Custom Scrollbar */
+        textarea::-webkit-scrollbar { width: 8px; }
+        textarea::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius: 4px; }
+        textarea::-webkit-scrollbar-thumb { background: rgba(99, 102, 241, 0.5); border-radius: 4px; }
+        textarea::-webkit-scrollbar-thumb:hover { background: rgba(99, 102, 241, 0.8); }
+
+        /* Sliders */
+        input[type=range] {
+            -webkit-appearance: none; width: 100%; background: transparent; height: 6px; border-radius: 3px; outline: none; background-color: rgba(255,255,255,0.1); position: relative;
+        }
+        input[type=range]::before {
+            content: ''; position: absolute; left: 0; top: 0; height: 100%; background-color: #6366f1; border-radius: 3px; z-index: 1; width: var(--value-percent, 50%);
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 18px; width: 18px; border-radius: 50%; background: #a5b4fc; cursor: pointer; position: relative; z-index: 2; box-shadow: 0 0 10px rgba(99, 102, 241, 0.8); transition: transform 0.1s;
+        }
+        input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); background: #fff; }
+
+        /* Select styling */
+        select {
+            -webkit-appearance: none; -moz-appearance: none; background-image: url("data:image/svg+xml;utf8,<svg fill='white' height='24' viewBox='0 0 24 24' width='24' xmlns='http://www.w3.org/2000/svg'><path d='M7 10l5 5 5-5z'/><path d='M0 0h24v24H0z' fill='none'/></svg>"); background-repeat: no-repeat; background-position-x: 96%; background-position-y: 50%;
+        }
+
+        /* Animation */
+        .pulse-ring { animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite; }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 15px rgba(99, 102, 241, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+        }
+        
+        .spin-slow { animation: spin 2s linear infinite; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="flex items-center justify-center p-4 lg:p-8">
+
+    <!-- Trình phát Audio ẩn -->
+    <audio id="audio-player" class="hidden"></audio>
+
+    <!-- App Container -->
+    <div class="glass-panel w-full max-w-6xl rounded-[2rem] overflow-hidden flex flex-col mt-4 relative">
+        
+        <!-- Loading Overlay -->
+        <div id="loading-overlay" class="hidden absolute inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
+            <i data-lucide="loader-2" class="w-12 h-12 text-indigo-400 spin-slow mb-4"></i>
+            <h3 class="text-xl font-bold text-white">AI Đang Xử Lý Giọng Nói...</h3>
+            <p class="text-slate-400 text-sm mt-2">Đang biên dịch tệp <span id="loading-format" class="font-bold text-indigo-300">MP3</span>, vui lòng chờ trong giây lát.</p>
+        </div>
+
+        <!-- HEADER -->
+        <header class="flex items-center justify-between p-6 lg:px-10 lg:py-6 border-b border-app-border">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-400 to-indigo-600 flex items-center justify-center shadow-lg">
+                    <i data-lucide="mic" class="w-6 h-6 text-white"></i>
+                </div>
+                <h1 class="text-2xl lg:text-3xl font-black tracking-wide flex items-center gap-2">
+                    Sunbot <span class="font-light text-indigo-300">Voice Pro</span>
+                </h1>
+            </div>
+            
+            <div class="flex items-center gap-4">
+                <div class="hidden md:flex items-center px-4 py-2 bg-gradient-to-r from-indigo-500/20 to-purple-500/20 rounded-full border border-indigo-500/30 shadow-[0_0_10px_rgba(99,102,241,0.2)]">
+                    <i data-lucide="sparkles" class="w-4 h-4 text-indigo-300 mr-2"></i>
+                    <span class="text-xs font-bold tracking-widest text-indigo-200">GENERATIVE AI</span>
+                </div>
+                <!-- Nút Cài đặt API Key -->
+                <button onclick="openSettings()" class="w-10 h-10 rounded-full border border-emerald-400/50 flex items-center justify-center hover:bg-emerald-500/20 cursor-pointer transition text-emerald-300 hover:text-white group relative shadow-[0_0_15px_rgba(52,211,153,0.3)]">
+                    <i data-lucide="key" class="w-4 h-4"></i>
+                    <span class="absolute -bottom-10 right-0 bg-slate-800 text-xs px-3 py-1.5 rounded-lg hidden group-hover:block whitespace-nowrap border border-slate-700 shadow-xl z-50">Cài đặt API Key</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- MAIN CONTENT -->
+        <main class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-8 p-6 lg:p-10">
+            
+            <!-- CỘT TRÁI: Nhập văn bản -->
+            <div class="lg:col-span-7 flex flex-col gap-4">
+                <div class="flex justify-between items-end">
+                    <h2 class="text-slate-400 font-semibold text-sm tracking-wide">Văn bản cần chuyển đổi</h2>
+                    <span class="text-xs text-slate-500 font-medium"><span id="char-count">174</span> / 5000 KÝ TỰ</span>
+                </div>
+                
+                <div class="relative flex-1 min-h-[250px] lg:min-h-[300px]">
+                    <textarea id="text-input" class="w-full h-full bg-slate-900/50 border border-app-border rounded-2xl p-6 text-lg text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition resize-none leading-relaxed" placeholder="Nhập văn bản tiếng Việt vào đây...">Chào mừng bạn đến với Sunbot Voice. Công cụ chuyển đổi văn bản sang giọng nói tiếng Việt chuyên nghiệp với công nghệ AI tiên tiến, mang lại âm thanh tự nhiên và cảm xúc nhất.</textarea>
+                </div>
+
+                <!-- Gợi ý phong cách -->
+                <div class="flex flex-wrap gap-3 mt-2">
+                    <button onclick="insertSample('lichsu')" class="px-5 py-2 rounded-xl bg-white/5 border border-white/10 text-sm font-medium hover:bg-indigo-600/30 hover:border-indigo-500/50 transition">Lịch sử</button>
+                    <button onclick="insertSample('nangdong')" class="px-5 py-2 rounded-xl bg-white/5 border border-white/10 text-sm font-medium hover:bg-indigo-600/30 hover:border-indigo-500/50 transition">Năng động</button>
+                    <button onclick="insertSample('kechuyen')" class="px-5 py-2 rounded-xl bg-white/5 border border-white/10 text-sm font-medium hover:bg-indigo-600/30 hover:border-indigo-500/50 transition">Kể chuyện</button>
+                    <button onclick="insertSample('tintuc')" class="px-5 py-2 rounded-xl bg-white/5 border border-white/10 text-sm font-medium hover:bg-indigo-600/30 hover:border-indigo-500/50 transition">Tin tức</button>
+                </div>
+            </div>
+
+            <!-- CỘT PHẢI: Cấu hình giọng -->
+            <div class="lg:col-span-5 flex flex-col gap-6">
+                <h2 class="text-slate-400 font-semibold text-sm tracking-wide flex items-center gap-2">
+                    <i data-lucide="settings-2" class="w-4 h-4"></i> CẤU HÌNH GIỌNG ĐỌC AI
+                </h2>
+
+                <div class="bg-white/5 border border-white/10 rounded-2xl p-6 flex flex-col gap-8">
+                    
+                    <!-- Chọn giọng -->
+                    <div class="flex flex-col gap-3">
+                        <label class="text-xs font-bold tracking-wider text-slate-500 uppercase">Chọn Giọng AI</label>
+                        <div class="relative">
+                            <select id="voice-select" class="w-full bg-slate-900/80 border border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.2)] rounded-xl px-4 py-3.5 text-base text-slate-100 focus:outline-none focus:border-indigo-400 transition cursor-pointer appearance-none font-semibold">
+                                <optgroup label="Giọng Nữ">
+                                    <option value="Aoede">👩🏻 Khánh Lam (Trưởng thành - Truyền cảm)</option>
+                                    <option value="Kore">👩🏻‍🦰 Thanh Trúc (Trưởng thành - Dịu dàng)</option>
+                                    <option value="Leda">👧🏻 Sunbot Girl (7 tuổi - Trong trẻo)</option>
+                                    <option value="Callirrhoe">👧🏻 Sunbot Girl (7 tuổi - Phấn khích)</option>
+                                </optgroup>
+                                <optgroup label="Giọng Nam">
+                                    <option value="Puck">👨🏻 Gia Bảo (Trưởng thành - Năng động)</option>
+                                    <option value="Charon">👨🏻‍🦱 Hoàng Bách (Trưởng thành - Trầm ấm)</option>
+                                    <option value="Zephyr">👦🏻 Sunbot Boy (7 tuổi - Trong trẻo)</option>
+                                    <option value="Orus">👦🏻 Sunbot Boy (7 tuổi - Phấn khích)</option>
+                                    <option value="Fenrir">👴🏻 Bác Trần (Kể chuyện)</option>
+                                </optgroup>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Speed Slider -->
+                    <div class="flex flex-col gap-4">
+                        <div class="flex justify-between items-center">
+                            <label class="text-xs font-bold tracking-wider text-slate-500 uppercase">Tốc độ phát</label>
+                            <span id="speed-val" class="text-indigo-400 font-mono text-sm">1.0x</span>
+                        </div>
+                        <input type="range" id="speed-slider" min="0.5" max="2" step="0.1" value="1.0" class="w-full cursor-pointer" style="--value-percent: 33.33%;">
+                    </div>
+
+                    <!-- Pitch Slider -->
+                    <div class="flex flex-col gap-4">
+                        <div class="flex justify-between items-center">
+                            <label class="text-xs font-bold tracking-wider text-slate-500 uppercase">Tone giọng (AI Prompting)</label>
+                            <span id="pitch-val" class="text-indigo-400 font-mono text-sm">0</span>
+                        </div>
+                        <input type="range" id="pitch-slider" min="-1" max="1" step="0.1" value="0" class="w-full cursor-pointer" style="--value-percent: 50%;">
+                        <p class="text-[10px] text-slate-500 italic mt-1">*Thay đổi Tone sẽ điều hướng cảm xúc của AI. Cần tạo lại file để áp dụng.</p>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+
+        <!-- BOTTOM PLAYER BAR -->
+        <footer class="bg-slate-900/90 border-t border-app-border p-4 lg:px-10 lg:py-5 flex flex-col md:flex-row items-center gap-6 justify-between">
+            
+            <!-- Voice Info -->
+            <div class="flex items-center gap-4 min-w-[200px]">
+                <div id="player-avatar" class="w-12 h-12 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 font-black text-xl transition-all">
+                    K
+                </div>
+                <div class="flex flex-col">
+                    <span id="player-name" class="font-bold text-slate-200">Khánh Lam</span>
+                    <span id="player-status" class="text-[10px] uppercase tracking-widest text-slate-500 font-bold">SẴN SÀNG</span>
+                </div>
+            </div>
+
+            <!-- Trình phát UI -->
+            <div class="flex-1 w-full flex items-center gap-4 px-0 md:px-8">
+                <span id="time-current" class="text-xs text-slate-500 font-mono w-8 text-right">0:00</span>
+                <div class="flex-1 h-1.5 bg-slate-800 rounded-full relative overflow-hidden cursor-pointer" id="progress-container">
+                    <div id="progress-fill" class="absolute top-0 left-0 h-full bg-indigo-500 w-0 transition-all duration-100 ease-linear"></div>
+                </div>
+                <span id="time-total" class="text-xs text-slate-500 font-mono w-8">--:--</span>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex items-center gap-3 w-full md:w-auto justify-end">
+                
+                <!-- Format Selector -->
+                <div class="flex items-center gap-2 mr-2 bg-slate-800 px-3 py-2 rounded-xl border border-slate-700">
+                    <label class="text-[10px] text-slate-400 font-bold uppercase hidden md:block">Định dạng:</label>
+                    <select id="export-format" class="bg-transparent text-indigo-300 text-sm font-bold outline-none cursor-pointer">
+                        <option value="mp3">.MP3</option>
+                        <option value="wav">.WAV</option>
+                    </select>
+                </div>
+
+                <!-- Nút Tải Audio -->
+                <a id="btn-download" class="hidden items-center justify-center gap-2 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 font-semibold px-4 py-3 rounded-xl border border-emerald-500/30 transition cursor-pointer">
+                    <i data-lucide="download" class="w-5 h-5"></i>
+                    <span class="text-sm hidden md:block">Tải File</span>
+                </a>
+                
+                <!-- Nút Play/Generate -->
+                <button onclick="handleMainAction()" id="btn-generate" class="flex-1 md:flex-none flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-8 py-3 rounded-xl shadow-[0_0_15px_rgba(79,70,229,0.4)] transition">
+                    <i data-lucide="wand-2" id="btn-icon" class="w-5 h-5"></i>
+                    <span id="btn-text">Tạo & Nghe</span>
+                </button>
+            </div>
+
+        </footer>
+    </div>
+
+    <!-- MODAL CÀI ĐẶT API KEY -->
+    <div id="settings-modal" class="hidden fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+        <div class="bg-slate-800 border border-indigo-500/30 rounded-2xl p-6 max-w-md w-full shadow-2xl modal-enter">
+            <h3 class="text-xl font-bold text-white mb-3 flex items-center gap-2">
+                <i data-lucide="key" class="text-indigo-400"></i> Cấu hình API Key Cá Nhân
+            </h3>
+            <p class="text-slate-300 text-sm leading-relaxed mb-4">
+                Mã API Key đã được bảo mật. Nhập mã mới để ghi đè (nếu cần).
+            </p>
+            <input type="password" id="api-key-input" placeholder="Dán mã API Key vào đây..." class="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 mb-6 font-mono text-sm">
+            <div class="flex justify-end gap-3">
+                <button onclick="closeSettings()" class="px-5 py-2 text-slate-300 hover:text-white transition font-medium">Hủy</button>
+                <button onclick="saveApiKey()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-xl font-semibold transition shadow-lg flex items-center gap-2">
+                    <i data-lucide="save" class="w-4 h-4"></i> Lưu Lại
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Thông báo lỗi Modal -->
+    <div id="error-modal" class="hidden fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-slate-800 border border-rose-500/50 rounded-2xl p-6 max-w-md w-full shadow-2xl">
+            <h3 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
+                <i data-lucide="alert-triangle" class="text-rose-400"></i> Lỗi Tạo Giọng
+            </h3>
+            <p id="error-msg" class="text-slate-300 text-sm leading-relaxed mb-6">
+                Đã xảy ra lỗi khi kết nối tới máy chủ AI. Vui lòng thử lại.
+            </p>
+            <div class="flex justify-end">
+                <button onclick="document.getElementById('error-modal').classList.add('hidden')" class="bg-rose-600 hover:bg-rose-500 text-white px-6 py-2 rounded-lg font-semibold transition">Đóng</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Init Icons
+        lucide.createIcons();
+
+        // TÍCH HỢP SẴN KEY CỦA BẠN (Hardcoded fallback)
+        const HARDCODED_API_KEY = "AIzaSyAysTaDiv1EWpvvnmUYjihBOsWe0owQKrQ"; 
+
+        // Ưu tiên Key người dùng nhập, nếu không có thì lấy Key Hardcode
+        function getActiveKey() {
+            const localKey = localStorage.getItem('sunbot_gemini_key');
+            if (localKey && localKey.trim() !== '') return localKey;
+            return HARDCODED_API_KEY;
+        }
+
+        // Logic Modal Settings
+        function openSettings() {
+            document.getElementById('api-key-input').value = localStorage.getItem('sunbot_gemini_key') || HARDCODED_API_KEY;
+            document.getElementById('settings-modal').classList.remove('hidden');
+        }
+        function closeSettings() {
+            document.getElementById('settings-modal').classList.add('hidden');
+        }
+        function saveApiKey() {
+            const val = document.getElementById('api-key-input').value.trim();
+            localStorage.setItem('sunbot_gemini_key', val);
+            closeSettings();
+        }
+
+        // DOM Elements
+        const textInput = document.getElementById('text-input');
+        const charCount = document.getElementById('char-count');
+        const voiceSelect = document.getElementById('voice-select');
+        const speedSlider = document.getElementById('speed-slider');
+        const speedVal = document.getElementById('speed-val');
+        const pitchSlider = document.getElementById('pitch-slider');
+        const pitchVal = document.getElementById('pitch-val');
+        const exportFormat = document.getElementById('export-format');
+        
+        const btnGenerate = document.getElementById('btn-generate');
+        const btnText = document.getElementById('btn-text');
+        const btnIcon = document.getElementById('btn-icon');
+        const btnDownload = document.getElementById('btn-download');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const loadingFormatText = document.getElementById('loading-format');
+        
+        const playerAvatar = document.getElementById('player-avatar');
+        const playerName = document.getElementById('player-name');
+        const playerStatus = document.getElementById('player-status');
+        const progressFill = document.getElementById('progress-fill');
+        const timeCurrent = document.getElementById('time-current');
+        const timeTotal = document.getElementById('time-total');
+        
+        const audioPlayer = document.getElementById('audio-player');
+
+        // Trạng thái hệ thống
+        let audioState = 'IDLE'; 
+        let currentAudioUrl = null;
+        let lastGeneratedText = '';
+
+        // Cập nhật background cho thanh trượt
+        function updateSliderBg(slider, min, max) {
+            const val = slider.value;
+            const percent = ((val - min) / (max - min)) * 100;
+            slider.style.setProperty('--value-percent', `${percent}%`);
+        }
+
+        speedSlider.addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            speedVal.textContent = val.toFixed(1) + 'x';
+            updateSliderBg(e.target, 0.5, 2);
+            // Áp dụng tốc độ realtime cho audio (nếu đang phát)
+            audioPlayer.playbackRate = val;
+        });
+
+        pitchSlider.addEventListener('input', (e) => {
+            pitchVal.textContent = parseFloat(e.target.value).toFixed(1);
+            updateSliderBg(e.target, -1, 1);
+            if(audioState === 'HAS_AUDIO' || audioState === 'PAUSED' || audioState === 'PLAYING') {
+                resetToIdle(); // Yêu cầu tạo lại nếu thay đổi Pitch (vì gửi AI prompt)
+            }
+        });
+
+        textInput.addEventListener('input', () => {
+            charCount.textContent = textInput.value.length;
+            if(audioState !== 'IDLE' && audioState !== 'LOADING') resetToIdle();
+        });
+
+        voiceSelect.addEventListener('change', updatePlayerInfo);
+
+        function updatePlayerInfo() {
+            if(voiceSelect.options.length === 0) return;
+            const selectedText = voiceSelect.options[voiceSelect.selectedIndex].text;
+            const cleanName = selectedText.split('(')[0].replace(/[^\w\s\u00C0-\u1EF9]/g, '').trim(); 
+            const shortName = cleanName.charAt(0);
+            
+            playerName.textContent = cleanName;
+            playerAvatar.textContent = shortName;
+            
+            if(audioState !== 'IDLE') resetToIdle();
+        }
+        updatePlayerInfo();
+
+        function handleMainAction() {
+            if (audioState === 'IDLE') {
+                generateVoiceWithAI();
+            } else if (audioState === 'HAS_AUDIO' || audioState === 'PAUSED') {
+                playAudio();
+            } else if (audioState === 'PLAYING') {
+                pauseAudio();
+            }
+        }
+
+        // ==========================================
+        // BỘ MÃ HÓA ÂM THANH (PCM -> WAV & MP3)
+        // ==========================================
+
+        function writeString(view, offset, string) {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        }
+
+        // Tạo file WAV
+        function pcmToWav(base64Pcm, sampleRate = 24000) {
+            const binaryStr = atob(base64Pcm);
+            const bytes = new Uint8Array(binaryStr.length);
+            for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+            
+            const buffer = new ArrayBuffer(44 + bytes.length);
+            const view = new DataView(buffer);
+            
+            writeString(view, 0, 'RIFF');
+            view.setUint32(4, 36 + bytes.length, true);
+            writeString(view, 8, 'WAVE');
+            writeString(view, 12, 'fmt ');
+            view.setUint32(16, 16, true); 
+            view.setUint16(20, 1, true); 
+            view.setUint16(22, 1, true); 
+            view.setUint32(24, sampleRate, true); 
+            view.setUint32(28, sampleRate * 2, true); 
+            view.setUint16(32, 2, true); 
+            view.setUint16(34, 16, true); 
+            writeString(view, 36, 'data');
+            view.setUint32(40, bytes.length, true);
+            
+            const dataArray = new Uint8Array(buffer, 44);
+            dataArray.set(bytes);
+            
+            return new Blob([buffer], { type: 'audio/wav' });
+        }
+
+        // Tạo file MP3 bằng LameJS
+        function pcmToMp3(base64Pcm, sampleRate = 24000) {
+            if (typeof lamejs === 'undefined') {
+                console.warn("LameJS chưa tải xong, chuyển sang WAV");
+                return pcmToWav(base64Pcm, sampleRate);
+            }
+
+            const binaryStr = atob(base64Pcm);
+            const pcmData = new Int16Array(binaryStr.length / 2);
+            
+            // Xử lý 16-bit Little Endian PCM
+            const view = new DataView(new ArrayBuffer(binaryStr.length));
+            for (let i = 0; i < binaryStr.length; i++) {
+                view.setUint8(i, binaryStr.charCodeAt(i));
+            }
+            for (let i = 0; i < pcmData.length; i++) {
+                pcmData[i] = view.getInt16(i * 2, true); 
+            }
+
+            const mp3encoder = new lamejs.Mp3Encoder(1, sampleRate, 128); // Mono, SampleRate, 128kbps
+            const mp3Data = [];
+            const sampleBlockSize = 1152; // LameJS yêu cầu chunk 1152
+
+            for (let i = 0; i < pcmData.length; i += sampleBlockSize) {
+                const sampleChunk = pcmData.subarray(i, i + sampleBlockSize);
+                const mp3buf = mp3encoder.encodeBuffer(sampleChunk);
+                if (mp3buf.length > 0) mp3Data.push(mp3buf);
+            }
+            const mp3buf = mp3encoder.flush();
+            if (mp3buf.length > 0) mp3Data.push(mp3buf);
+
+            return new Blob(mp3Data, { type: 'audio/mp3' });
+        }
+
+        function formatTime(seconds) {
+            if (isNaN(seconds) || seconds === Infinity) return "--:--";
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        // ==========================================
+        // KẾT NỐI GEMINI TTS API
+        // ==========================================
+
+        async function generateVoiceWithAI() {
+            let text = textInput.value.trim();
+            if (!text) return;
+
+            const currentActiveKey = getActiveKey();
+            if (!currentActiveKey) {
+                document.getElementById('error-msg').innerHTML = "Chưa có API Key. Vui lòng nhập Key hợp lệ.";
+                document.getElementById('error-modal').classList.remove('hidden');
+                return;
+            }
+
+            const selectedVoiceId = voiceSelect.value;
+            const formatSelected = exportFormat.value.toUpperCase();
+            
+            // AI Prompt Engineering cho Cảm xúc và Tone Giọng
+            let instructionPrefix = "";
+            
+            // Hướng dẫn đặc biệt cho các giọng trẻ em (Kids)
+            if (selectedVoiceId === 'Leda') instructionPrefix = "Say cheerfully and clearly like a 7 year old Vietnamese girl: ";
+            else if (selectedVoiceId === 'Callirrhoe') instructionPrefix = "Say very excitedly and inspiringly like a 7 year old Vietnamese girl: ";
+            else if (selectedVoiceId === 'Zephyr') instructionPrefix = "Say cheerfully and clearly like a 7 year old Vietnamese boy: ";
+            else if (selectedVoiceId === 'Orus') instructionPrefix = "Say very excitedly and inspiringly like a 7 year old Vietnamese boy: ";
+
+            // Điều khiển Cao độ (Pitch) qua mệnh lệnh ngôn ngữ tự nhiên
+            const pitchVal = parseFloat(pitchSlider.value);
+            if (pitchVal > 0.4) {
+                instructionPrefix += instructionPrefix ? "with a high pitch voice: " : "Say with a very high pitch voice: ";
+            } else if (pitchVal < -0.4) {
+                instructionPrefix += instructionPrefix ? "with a deep low voice: " : "Say with a deep low voice: ";
+            }
+
+            // Text gửi lên AI
+            const finalPromptText = instructionPrefix ? `"${instructionPrefix} ${text}"` : text;
+
+            audioState = 'LOADING';
+            loadingFormatText.textContent = formatSelected;
+            loadingOverlay.classList.remove('hidden');
+            
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${currentActiveKey}`;
+            
+            const payload = {
+                contents: [{ parts: [{ text: finalPromptText }] }],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: {
+                        voiceConfig: {
+                            prebuiltVoiceConfig: { voiceName: selectedVoiceId }
+                        }
+                    }
+                },
+                model: "gemini-2.5-flash-preview-tts"
+            };
+
+            let retryCount = 0;
+            const maxRetries = 5;
+            const delays = [1000, 2000, 4000, 8000, 16000];
+
+            while (retryCount <= maxRetries) {
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        const errData = await response.text();
+                        throw new Error(`${response.status} - ${errData}`);
+                    }
+
+                    const result = await response.json();
+                    const inlineData = result.candidates?.[0]?.content?.parts?.[0]?.inlineData;
+                    const base64Audio = inlineData?.data;
+                    
+                    if (!base64Audio) throw new Error("Không nhận được dữ liệu âm thanh từ AI.");
+
+                    let sampleRate = 24000;
+                    if (inlineData.mimeType && inlineData.mimeType.includes('rate=')) {
+                        const match = inlineData.mimeType.match(/rate=(\d+)/);
+                        if (match) sampleRate = parseInt(match[1]);
+                    }
+
+                    // Biến đổi định dạng dựa trên Option
+                    let audioBlob;
+                    if (formatSelected === 'MP3') {
+                        audioBlob = pcmToMp3(base64Audio, sampleRate);
+                    } else {
+                        audioBlob = pcmToWav(base64Audio, sampleRate);
+                    }
+                    
+                    if (currentAudioUrl) URL.revokeObjectURL(currentAudioUrl); 
+                    currentAudioUrl = URL.createObjectURL(audioBlob);
+                    
+                    audioPlayer.src = currentAudioUrl;
+                    audioPlayer.playbackRate = parseFloat(speedSlider.value); // Áp dụng tốc độ
+                    
+                    btnDownload.href = currentAudioUrl;
+                    btnDownload.download = `Sunbot_Voice_${selectedVoiceId}.${formatSelected.toLowerCase()}`;
+                    btnDownload.classList.remove('hidden');
+                    btnDownload.classList.add('flex');
+                    
+                    audioState = 'HAS_AUDIO';
+                    loadingOverlay.classList.add('hidden');
+                    
+                    playAudio();
+                    return;
+
+                } catch (error) {
+                    if (retryCount < maxRetries && !error.message.includes("400") && !error.message.includes("403")) {
+                        await new Promise(resolve => setTimeout(resolve, delays[retryCount]));
+                        retryCount++;
+                    } else {
+                        loadingOverlay.classList.add('hidden');
+                        let errorMessageText = "Không thể kết nối đến AI lúc này.";
+                        if (error.message.includes("400") || error.message.includes("403")) {
+                            errorMessageText = "API Key không hợp lệ. Vui lòng kiểm tra lại.";
+                        }
+                        document.getElementById('error-msg').innerHTML = errorMessageText + `<br><br><span class="text-[10px] text-rose-300 font-mono">Log: ${error.message.substring(0, 100)}</span>`;
+                        document.getElementById('error-modal').classList.remove('hidden');
+                        resetToIdle();
+                        return;
+                    }
+                }
+            }
+        }
+        
+        function playAudio() {
+            audioPlayer.playbackRate = parseFloat(speedSlider.value);
+            audioPlayer.play();
+            audioState = 'PLAYING';
+            btnText.textContent = "Tạm dừng";
+            btnIcon.setAttribute('data-lucide', 'pause');
+            btnGenerate.classList.replace('bg-indigo-600', 'bg-rose-500');
+            btnGenerate.classList.replace('hover:bg-indigo-500', 'hover:bg-rose-600');
+            playerStatus.textContent = "ĐANG PHÁT...";
+            playerStatus.classList.replace('text-slate-500', 'text-indigo-400');
+            playerAvatar.classList.add('pulse-ring', 'bg-indigo-600', 'text-white');
+            lucide.createIcons();
+        }
+
+        function pauseAudio() {
+            audioPlayer.pause();
+            audioState = 'PAUSED';
+            btnText.textContent = "Tiếp tục nghe";
+            btnIcon.setAttribute('data-lucide', 'play');
+            btnGenerate.classList.replace('bg-rose-500', 'bg-indigo-600');
+            btnGenerate.classList.replace('hover:bg-rose-600', 'hover:bg-indigo-500');
+            playerStatus.textContent = "TẠM DỪNG";
+            playerStatus.classList.replace('text-indigo-400', 'text-slate-500');
+            playerAvatar.classList.remove('pulse-ring', 'bg-indigo-600', 'text-white');
+            lucide.createIcons();
+        }
+
+        function resetToIdle() {
+            audioState = 'IDLE';
+            audioPlayer.pause();
+            audioPlayer.src = '';
+            progressFill.style.width = '0%';
+            timeCurrent.textContent = '0:00';
+            timeTotal.textContent = '--:--';
+            btnDownload.classList.add('hidden');
+            btnDownload.classList.remove('flex');
+            btnText.textContent = "Tạo & Nghe";
+            btnIcon.setAttribute('data-lucide', 'wand-2');
+            btnGenerate.classList.remove('bg-rose-500', 'hover:bg-rose-600');
+            btnGenerate.classList.add('bg-indigo-600', 'hover:bg-indigo-500');
+            playerStatus.textContent = "SẴN SÀNG";
+            playerStatus.classList.replace('text-indigo-400', 'text-slate-500');
+            playerAvatar.classList.remove('pulse-ring', 'bg-indigo-600', 'text-white');
+            lucide.createIcons();
+        }
+
+        audioPlayer.addEventListener('timeupdate', () => {
+            if (!audioPlayer.duration) return;
+            const percent = (audioPlayer.currentTime / audioPlayer.duration) * 100;
+            progressFill.style.width = `${percent}%`;
+            timeCurrent.textContent = formatTime(audioPlayer.currentTime);
+        });
+
+        audioPlayer.addEventListener('loadedmetadata', () => {
+            timeTotal.textContent = formatTime(audioPlayer.duration);
+        });
+
+        audioPlayer.addEventListener('ended', () => {
+            audioState = 'HAS_AUDIO'; 
+            progressFill.style.width = '100%';
+            btnText.textContent = "Nghe lại";
+            btnIcon.setAttribute('data-lucide', 'rotate-ccw');
+            btnGenerate.classList.replace('bg-rose-500', 'bg-indigo-600');
+            btnGenerate.classList.replace('hover:bg-rose-600', 'hover:bg-indigo-500');
+            playerStatus.textContent = "HOÀN TẤT";
+            playerStatus.classList.replace('text-indigo-400', 'text-emerald-400');
+            playerAvatar.classList.remove('pulse-ring', 'bg-indigo-600', 'text-white');
+            lucide.createIcons();
+        });
+
+        document.getElementById('progress-container').addEventListener('click', (e) => {
+            if (!audioPlayer.src || !audioPlayer.duration) return;
+            const rect = e.target.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const percent = clickX / rect.width;
+            audioPlayer.currentTime = percent * audioPlayer.duration;
+        });
+
+        const samples = {
+            'lichsu': "Đại Cồ Việt là quốc hiệu đầu tiên của nước ta dưới thời nhà Đinh. Vua Đinh Tiên Hoàng đã có công dẹp loạn mười hai sứ quân, thống nhất đất nước.",
+            'nangdong': "Chào ngày mới các bạn trẻ! Hôm nay chúng ta sẽ cùng khám phá 5 mẹo vặt siêu đỉnh giúp tăng năng suất làm việc gấp đôi nhé. Bắt đầu thôi nào!",
+            'kechuyen': "Ngày xửa ngày xưa, ở một ngôi làng nọ, có một cô bé quàng khăn đỏ rất dễ thương. Một hôm, mẹ bảo cô mang bánh đến biếu bà ngoại bị ốm...",
+            'tintuc': "Bản tin thời sự lúc mười chín giờ. Hôm nay, thị trường công nghệ chứng kiến sự ra mắt của dòng chip AI mới nhất, hứa hẹn thay đổi cục diện ngành phần mềm toàn cầu."
+        };
+
+        function insertSample(type) {
+            textInput.value = samples[type];
+            charCount.textContent = textInput.value.length;
+            resetToIdle();
+            textInput.classList.add('bg-indigo-900/30');
+            setTimeout(() => { textInput.classList.remove('bg-indigo-900/30'); }, 300);
+        }
+
+    </script>
+</body>
+</html>
